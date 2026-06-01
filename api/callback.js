@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   const BASE44_APP_ID = process.env.BASE44_APP_ID;
   const BASE44_API_KEY = process.env.BASE44_API_KEY;
 
-  // Canjear código por tokens
   const tokenRes = await fetch('https://api.mercadolibre.com/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -21,6 +20,7 @@ export default async function handler(req, res) {
       client_secret: CLIENT_SECRET,
       code,
       redirect_uri: REDIRECT_URI,
+      code_verifier: 'no_verifier',
     }),
   });
 
@@ -31,18 +31,15 @@ export default async function handler(req, res) {
 
   const tokens = await tokenRes.json();
 
-  // Obtener info del usuario ML
   const meRes = await fetch('https://api.mercadolibre.com/users/me', {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
   const mlUser = meRes.ok ? await meRes.json() : {};
 
-  // Decodificar email del state
   let userEmail = '';
   try { userEmail = atob(state || ''); } catch {}
 
-  // Guardar en Base44
-  const base44Res = await fetch(`https://api.base44.com/api/apps/${BASE44_APP_ID}/entities/MercadoLibreToken`, {
+  await fetch(`https://api.base44.com/api/apps/${BASE44_APP_ID}/entities/MercadoLibreToken`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -60,6 +57,5 @@ export default async function handler(req, res) {
     }),
   });
 
-  // Redirigir de vuelta a la app
   res.redirect(302, `https://envioszum.base44.app/comercial?ml_connected=1`);
 }
