@@ -1,0 +1,7 @@
+{
+  "name": "envioszum-ml-callback",
+  "version": "1.0.0",
+  "dependencies": {
+    "@base44/sdk": "^0.8.25"
+  }
+}
