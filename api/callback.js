@@ -3,10 +3,10 @@ export default async function handler(req, res) {
   if (!code) {
     return res.status(400).send('Código OAuth faltante');
   }
+
   const CLIENT_ID = process.env.ML_CLIENT_ID;
   const CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
   const REDIRECT_URI = process.env.ML_REDIRECT_URI;
-  const BASE44_APP_ID = process.env.BASE44_APP_ID;
   const BASE44_API_KEY = process.env.BASE44_API_KEY;
 
   const tokenRes = await fetch('https://api.mercadolibre.com/oauth/token', {
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   let userEmail = '';
   try { userEmail = atob(state || ''); } catch {}
 
-  const base44Response = await fetch(`https://api.base44.com/api/apps/${BASE44_APP_ID}/entities/MercadoLibreToken`, {
+  const base44Response = await fetch(`https://69e8dcad5d3cfe653cb58e7d.base44.app/api/functions/mlOAuthCallback`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
