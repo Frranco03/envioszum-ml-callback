@@ -1,4 +1,3 @@
-const { createClient } = await import('@base44/sdk');
 export default async function handler(req, res) {
   const { code, state } = req.query;
   if (!code) {
@@ -38,6 +37,7 @@ export default async function handler(req, res) {
   try { userEmail = atob(state || ''); } catch {}
 
   try {
+    const { createClient } = await import('@base44/sdk');
     const base44 = createClient({
       appId: '69e8dcad5d3cfe653cb58e7d',
       headers: { 'api_key': BASE44_API_KEY },
