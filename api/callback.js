@@ -1,10 +1,8 @@
 export default async function handler(req, res) {
   const { code, state } = req.query;
-
   if (!code) {
     return res.status(400).send('Código OAuth faltante');
   }
-
   const CLIENT_ID = process.env.ML_CLIENT_ID;
   const CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
   const REDIRECT_URI = process.env.ML_REDIRECT_URI;
@@ -20,7 +18,6 @@ export default async function handler(req, res) {
       client_secret: CLIENT_SECRET,
       code,
       redirect_uri: REDIRECT_URI,
-      code_verifier: 'no_verifier',
     }),
   });
 
@@ -39,7 +36,7 @@ export default async function handler(req, res) {
   let userEmail = '';
   try { userEmail = atob(state || ''); } catch {}
 
-  await fetch(`https://api.base44.com/api/apps/${BASE44_APP_ID}/entities/MercadoLibreToken`, {
+  const base44Response = await fetch(`https://api.base44.com/api/apps/${BASE44_APP_ID}/entities/MercadoLibreToken`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -56,6 +53,10 @@ export default async function handler(req, res) {
       integration_mode: 'oauth',
     }),
   });
+
+  const base44Result = await base44Response.text();
+  console.log('BASE44 STATUS:', base44Response.status);
+  console.log('BASE44 RESPONSE:', base44Result);
 
   res.redirect(302, `https://envioszum.base44.app/comercial?ml_connected=1`);
 }
