@@ -1,5 +1,4 @@
-import { createClient } from '@base44/sdk';
-
+const { createClient } = await import('@base44/sdk');
 export default async function handler(req, res) {
   const { code, state } = req.query;
   if (!code) {
