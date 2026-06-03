@@ -116,6 +116,7 @@ export default async function handler(req, res) {
 
     const order = await orderRes.json();
     console.log('Orden ML recibida:', order.id);
+    console.log('Shipping completo:', JSON.stringify(order.shipping));
 
     const existing = await base44.entities.CommercialOrder.filter({ package_reference: `ML-${order.id}` });
     if (existing.length > 0) {
