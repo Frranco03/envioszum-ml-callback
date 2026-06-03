@@ -59,14 +59,8 @@ export default async function handler(req, res) {
     }
 
     const tokenRecord = allTokens[0];
-
-    console.log('Token raw primeros 20 chars:', tokenRecord.access_token?.substring(0, 20));
-
     let accessToken = await decryptToken(tokenRecord.access_token, ENC_KEY);
     let refreshToken = await decryptToken(tokenRecord.refresh_token, ENC_KEY);
-
-    console.log('Access token desencriptado, longitud:', accessToken.length);
-    console.log('Access token primeros 20 chars:', accessToken?.substring(0, 20));
 
     async function refreshAccessToken() {
       const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
@@ -97,13 +91,11 @@ export default async function handler(req, res) {
       if (!newTokens) {
         return res.status(200).json({ status: 'token refresh failed' });
       }
-
       await base44.entities.MercadoLibreToken.update(tokenRecord.id, {
         access_token: newTokens.access_token,
         refresh_token: newTokens.refresh_token,
         expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
       });
-
       accessToken = newTokens.access_token;
       orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -116,49 +108,18 @@ export default async function handler(req, res) {
 
     const order = await orderRes.json();
     console.log('Orden ML recibida:', order.id);
-    console.log('Shipping completo:', JSON.stringify(order.shipping));
 
     const existing = await base44.entities.CommercialOrder.filter({ package_reference: `ML-${order.id}` });
     if (existing.length > 0) {
       return res.status(200).json({ status: 'already_imported', order_id: order.id });
     }
 
-    const buyer = order.buyer || {};
-    const shippingAddress = order.shipping?.receiver_address || {};
-    const fullAddress = [
-      shippingAddress.street_name,
-      shippingAddress.street_number,
-      shippingAddress.city?.name || shippingAddress.municipality?.name,
-    ].filter(Boolean).join(' ');
+    // Obtener dirección del shipment
+    let shippingAddress = {};
+    let lat = null;
+    let lng = null;
+    const shipmentId = order.shipping?.id;
 
-    const lat = shippingAddress.latitude || null;
-    const lng = shippingAddress.longitude || null;
-
-    const commercialUsers = await base44.entities.CommercialUser.filter({ user_email: tokenRecord.user_email });
-    const commercialUser = commercialUsers[0];
-
-    const newOrder = {
-      user_email: tokenRecord.user_email,
-      tenant_id: commercialUser?.tenant_id || '',
-      user_name: commercialUser?.business_name || tokenRecord.ml_nickname || tokenRecord.user_email,
-      recipient_name: buyer.nickname || `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || 'Comprador ML',
-      destination_address: fullAddress || 'Dirección no disponible',
-      contact_phone: buyer.phone?.number ? String(buyer.phone.number) : '',
-      package_reference: `ML-${order.id}`,
-      zone: 'tarifa_comercial',
-      status: 'pendiente_recoleccion',
-      notes: `Venta ML #${order.id}`,
-      destination_lat: lat,
-      destination_lng: lng,
-    };
-
-    await base44.entities.CommercialOrder.create(newOrder);
-    console.log('Orden creada:', newOrder.package_reference);
-
-    return res.status(200).json({ status: 'order_created', ml_order_id: order.id });
-
-  } catch (err) {
-    console.error('Error en webhook:', err.message);
-    return res.status(500).json({ error: err.message });
-  }
-}
+    if (shipmentId) {
+      const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${shipmentId}`, {
+        headers: { Authorization: `Bearer
