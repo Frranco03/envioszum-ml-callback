@@ -1,3 +1,23 @@
+async function getKey(rawKey) {
+  const raw = new TextEncoder().encode(rawKey);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', raw);
+  return crypto.subtle.importKey('raw', hashBuffer, { name: 'AES-GCM' }, false, ['decrypt']);
+}
+
+async function decryptToken(ciphertext, rawKey) {
+  if (!ciphertext) return '';
+  try {
+    const key = await getKey(rawKey);
+    const combined = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const cipher = combined.slice(12);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+    return new TextDecoder().decode(plain);
+  } catch {
+    return ciphertext; // Si falla la desencriptación, devolver el valor original
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok' });
@@ -10,6 +30,7 @@ export default async function handler(req, res) {
   const BASE44_API_KEY = process.env.BASE44_API_KEY;
   const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
   const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+  const ENC_KEY = process.env.ML_TOKEN_ENC_KEY || 'envios-zum-default-32byteskey!!x';
 
   try {
     const body = req.body;
@@ -32,17 +53,20 @@ export default async function handler(req, res) {
       headers: { 'api_key': BASE44_API_KEY },
     });
 
-    // Buscar token de la tienda
     const allTokens = await base44.entities.MercadoLibreToken.filter({ ml_user_id: mlUserId });
     if (allTokens.length === 0) {
       return res.status(200).json({ status: 'no token for user', ml_user_id: mlUserId });
     }
 
     const tokenRecord = allTokens[0];
-    let accessToken = tokenRecord.access_token;
 
-    // Función para refrescar el token
-    async function refreshAccessToken(refreshToken) {
+    // Desencriptar tokens
+    let accessToken = await decryptToken(tokenRecord.access_token, ENC_KEY);
+    let refreshToken = await decryptToken(tokenRecord.refresh_token, ENC_KEY);
+
+    console.log('Access token desencriptado, longitud:', accessToken.length);
+
+    async function refreshAccessToken() {
       const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -53,23 +77,25 @@ export default async function handler(req, res) {
           refresh_token: refreshToken,
         }),
       });
-      if (!refreshRes.ok) return null;
+      if (!refreshRes.ok) {
+        const err = await refreshRes.text();
+        console.error('Refresh failed:', err);
+        return null;
+      }
       return await refreshRes.json();
     }
 
-    // Fetch de la orden con retry automático si 401/403
     let orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (orderRes.status === 401 || orderRes.status === 403) {
       console.log('Token vencido, refrescando...');
-      const newTokens = await refreshAccessToken(tokenRecord.refresh_token);
+      const newTokens = await refreshAccessToken();
       if (!newTokens) {
         return res.status(200).json({ status: 'token refresh failed' });
       }
 
-      // Guardar nuevo token en Base44
       await base44.entities.MercadoLibreToken.update(tokenRecord.id, {
         access_token: newTokens.access_token,
         refresh_token: newTokens.refresh_token,
@@ -77,8 +103,6 @@ export default async function handler(req, res) {
       });
 
       accessToken = newTokens.access_token;
-
-      // Reintentar con token nuevo
       orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -91,7 +115,6 @@ export default async function handler(req, res) {
     const order = await orderRes.json();
     console.log('Orden ML recibida:', order.id);
 
-    // Deduplicación
     const existing = await base44.entities.CommercialOrder.filter({ package_reference: `ML-${order.id}` });
     if (existing.length > 0) {
       return res.status(200).json({ status: 'already_imported', order_id: order.id });
