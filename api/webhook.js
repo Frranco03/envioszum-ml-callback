@@ -8,6 +8,8 @@ export default async function handler(req, res) {
   }
 
   const BASE44_API_KEY = process.env.BASE44_API_KEY;
+  const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
+  const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
 
   try {
     const body = req.body;
@@ -37,19 +39,57 @@ export default async function handler(req, res) {
     }
 
     const tokenRecord = allTokens[0];
-    const accessToken = tokenRecord.access_token;
+    let accessToken = tokenRecord.access_token;
 
-    // Fetch de la orden
-    const orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
+    // Función para refrescar el token
+    async function refreshAccessToken(refreshToken) {
+      const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: ML_CLIENT_ID,
+          client_secret: ML_CLIENT_SECRET,
+          refresh_token: refreshToken,
+        }),
+      });
+      if (!refreshRes.ok) return null;
+      return await refreshRes.json();
+    }
+
+    // Fetch de la orden con retry automático si 401/403
+    let orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    if (orderRes.status === 401 || orderRes.status === 403) {
+      console.log('Token vencido, refrescando...');
+      const newTokens = await refreshAccessToken(tokenRecord.refresh_token);
+      if (!newTokens) {
+        return res.status(200).json({ status: 'token refresh failed' });
+      }
+
+      // Guardar nuevo token en Base44
+      await base44.entities.MercadoLibreToken.update(tokenRecord.id, {
+        access_token: newTokens.access_token,
+        refresh_token: newTokens.refresh_token,
+        expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
+      });
+
+      accessToken = newTokens.access_token;
+
+      // Reintentar con token nuevo
+      orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    }
 
     if (!orderRes.ok) {
       return res.status(200).json({ status: 'ml order fetch failed', code: orderRes.status });
     }
 
     const order = await orderRes.json();
-    console.log('Orden ML:', JSON.stringify(order));
+    console.log('Orden ML recibida:', order.id);
 
     // Deduplicación
     const existing = await base44.entities.CommercialOrder.filter({ package_reference: `ML-${order.id}` });
