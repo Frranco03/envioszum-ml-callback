@@ -14,7 +14,7 @@ async function decryptToken(ciphertext, rawKey) {
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
     return new TextDecoder().decode(plain);
   } catch {
-    return ciphertext; // Si falla la desencriptación, devolver el valor original
+    return ciphertext;
   }
 }
 
@@ -60,11 +60,13 @@ export default async function handler(req, res) {
 
     const tokenRecord = allTokens[0];
 
-    // Desencriptar tokens
+    console.log('Token raw primeros 20 chars:', tokenRecord.access_token?.substring(0, 20));
+
     let accessToken = await decryptToken(tokenRecord.access_token, ENC_KEY);
     let refreshToken = await decryptToken(tokenRecord.refresh_token, ENC_KEY);
 
     console.log('Access token desencriptado, longitud:', accessToken.length);
+    console.log('Access token primeros 20 chars:', accessToken?.substring(0, 20));
 
     async function refreshAccessToken() {
       const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
