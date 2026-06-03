@@ -22,7 +22,6 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok' });
   }
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -114,7 +113,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'already_imported', order_id: order.id });
     }
 
-    // Obtener dirección del shipment
     let shippingAddress = {};
     let lat = null;
     let lng = null;
@@ -122,4 +120,50 @@ export default async function handler(req, res) {
 
     if (shipmentId) {
       const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${shipmentId}`, {
-        headers: { Authorization: `Bearer
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (shipRes.ok) {
+        const shipData = await shipRes.json();
+        shippingAddress = shipData.receiver_address || {};
+        lat = shippingAddress.latitude || null;
+        lng = shippingAddress.longitude || null;
+        console.log('Direccion obtenida:', JSON.stringify(shippingAddress));
+      }
+    }
+
+    const fullAddress = [
+      shippingAddress.street_name,
+      shippingAddress.street_number,
+      shippingAddress.city?.name,
+      shippingAddress.state?.name,
+    ].filter(Boolean).join(', ');
+
+    const buyer = order.buyer || {};
+    const commercialUsers = await base44.entities.CommercialUser.filter({ user_email: tokenRecord.user_email });
+    const commercialUser = commercialUsers[0];
+
+    const newOrder = {
+      user_email: tokenRecord.user_email,
+      tenant_id: commercialUser?.tenant_id || '',
+      user_name: commercialUser?.business_name || tokenRecord.ml_nickname || tokenRecord.user_email,
+      recipient_name: buyer.nickname || `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || 'Comprador ML',
+      destination_address: fullAddress || 'Direccion no disponible',
+      contact_phone: shippingAddress.receiver_phone || '',
+      package_reference: `ML-${order.id}`,
+      zone: 'tarifa_comercial',
+      status: 'pendiente_recoleccion',
+      notes: `Venta ML #${order.id}`,
+      destination_lat: lat,
+      destination_lng: lng,
+    };
+
+    await base44.entities.CommercialOrder.create(newOrder);
+    console.log('Orden creada con direccion:', newOrder.destination_address);
+
+    return res.status(200).json({ status: 'order_created', ml_order_id: order.id });
+
+  } catch (err) {
+    console.error('Error en webhook:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
