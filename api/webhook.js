@@ -1,5 +1,3 @@
-import { createClient } from '@base44/sdk';
-
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok' });
@@ -21,7 +19,7 @@ export default async function handler(req, res) {
     const body = req.body;
     console.log('Webhook recibido:', JSON.stringify(body));
 
-    const result = await base44.functions.mlWebhook(body);
+    const result = await base44.functions.invoke('mlWebhook', body);
     console.log('Resultado mlWebhook:', JSON.stringify(result));
 
     return res.status(200).json({ status: 'ok', result });
