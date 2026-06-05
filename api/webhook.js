@@ -30,6 +30,7 @@ export default async function handler(req, res) {
   const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
   const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
   const ENC_KEY = process.env.ML_TOKEN_ENC_KEY || 'envios-zum-default-32byteskey!!x';
+  const BOUNDS = { minLat: -34.95, maxLat: -34.60, minLng: -56.35, maxLng: -55.85 };
 
   try {
     const body = req.body;
@@ -60,9 +61,6 @@ export default async function handler(req, res) {
     const tokenRecord = allTokens[0];
     let accessToken = await decryptToken(tokenRecord.access_token, ENC_KEY);
     let refreshToken = await decryptToken(tokenRecord.refresh_token, ENC_KEY);
-
-    console.log('Access token primeros 10:', accessToken?.substring(0, 10));
-    console.log('Refresh token primeros 10:', refreshToken?.substring(0, 10));
 
     async function refreshAccessToken() {
       try {
@@ -145,6 +143,17 @@ export default async function handler(req, res) {
       shippingAddress.city?.name,
       shippingAddress.state?.name,
     ].filter(Boolean).join(', ');
+
+    // Validar zona de cobertura
+    const inZone = lat && lng ? (
+      lat >= BOUNDS.minLat && lat <= BOUNDS.maxLat &&
+      lng >= BOUNDS.minLng && lng <= BOUNDS.maxLng
+    ) : true;
+
+    if (!inZone) {
+      console.log('Pedido fuera de zona:', fullAddress, lat, lng);
+      return res.status(200).json({ status: 'out_of_zone', order_id: order.id });
+    }
 
     const buyer = order.buyer || {};
     const commercialUsers = await base44.entities.CommercialUser.filter({ user_email: tokenRecord.user_email });
