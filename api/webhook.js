@@ -61,23 +61,31 @@ export default async function handler(req, res) {
     let accessToken = await decryptToken(tokenRecord.access_token, ENC_KEY);
     let refreshToken = await decryptToken(tokenRecord.refresh_token, ENC_KEY);
 
+    console.log('Access token primeros 10:', accessToken?.substring(0, 10));
+    console.log('Refresh token primeros 10:', refreshToken?.substring(0, 10));
+
     async function refreshAccessToken() {
-      const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          client_id: ML_CLIENT_ID,
-          client_secret: ML_CLIENT_SECRET,
-          refresh_token: refreshToken,
-        }),
-      });
-      if (!refreshRes.ok) {
-        const err = await refreshRes.text();
-        console.error('Refresh failed:', err);
+      try {
+        console.log('Intentando refresh con token:', refreshToken?.substring(0, 20));
+        const refreshRes = await fetch('https://api.mercadolibre.com/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            client_id: ML_CLIENT_ID,
+            client_secret: ML_CLIENT_SECRET,
+            refresh_token: refreshToken,
+          }),
+        });
+        const refreshBody = await refreshRes.text();
+        console.log('Refresh status:', refreshRes.status);
+        console.log('Refresh response:', refreshBody);
+        if (!refreshRes.ok) return null;
+        return JSON.parse(refreshBody);
+      } catch (e) {
+        console.error('Refresh exception:', e.message);
         return null;
       }
-      return await refreshRes.json();
     }
 
     let orderRes = await fetch(`https://api.mercadolibre.com${resourceUrl}`, {
